@@ -50,7 +50,7 @@ public class PushPlugin extends CordovaPlugin implements PushConstants {
 
   /**
    * Gets the application context from cordova's main activity.
-   *
+   * 
    * @return the application context
    */
   private Context getApplicationContext() {
@@ -69,6 +69,7 @@ public class PushPlugin extends CordovaPlugin implements PushConstants {
         JSONObject channel = new JSONObject();
         channel.put(CHANNEL_ID, notificationChannel.getId());
         channel.put(CHANNEL_DESCRIPTION, notificationChannel.getDescription());
+        channel.put(CHANNEL_STATUS, notificationChannel.getImportance());
         channels.put(channel);
       }
     }
@@ -95,7 +96,7 @@ public class PushPlugin extends CordovaPlugin implements PushConstants {
       String packageName = getApplicationContext().getPackageName();
       NotificationChannel mChannel = new NotificationChannel(channel.getString(CHANNEL_ID),
           channel.optString(CHANNEL_DESCRIPTION, ""),
-          channel.optInt(CHANNEL_IMPORTANCE, NotificationManager.IMPORTANCE_DEFAULT));
+          channel.optInt(CHANNEL_IMPORTANCE, 4));
 
       int lightColor = channel.optInt(CHANNEL_LIGHT_COLOR, -1);
       if (lightColor != -1) {
@@ -147,6 +148,7 @@ public class PushPlugin extends CordovaPlugin implements PushConstants {
   @TargetApi(26)
   private void createDefaultNotificationChannelIfNeeded(JSONObject options) {
     String id;
+    String defaultChannelName;
     // only call on Android O and above
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
       final NotificationManager notificationManager = (NotificationManager) cordova.getActivity()
@@ -160,8 +162,15 @@ public class PushPlugin extends CordovaPlugin implements PushConstants {
         }
       }
       try {
+        defaultChannelName = options.getString("defaultChannelName");
         options.put(CHANNEL_ID, DEFAULT_CHANNEL_ID);
-        options.putOpt(CHANNEL_DESCRIPTION, "PhoneGap PushPlugin");
+
+        if (defaultChannelName == null || defaultChannelName.isEmpty()) {
+          defaultChannelName = "PhoneGap PushPlugin";
+        }
+        
+        options.putOpt(CHANNEL_DESCRIPTION, defaultChannelName);
+
         createChannel(options);
       } catch (JSONException e) {
         Log.e(LOG_TAG, "execute: Got JSON Exception " + e.getMessage());
@@ -198,18 +207,10 @@ public class PushPlugin extends CordovaPlugin implements PushConstants {
 
             Log.v(LOG_TAG, "execute: senderID=" + senderID);
 
-            try {
-              token = FirebaseInstanceId.getInstance().getToken();
-            } catch (IllegalStateException e) {
-              Log.e(LOG_TAG, "Exception raised while getting Firebase token " + e.getMessage());
-            }
+            token = FirebaseInstanceId.getInstance().getToken();
 
             if (token == null) {
-              try {
-                token = FirebaseInstanceId.getInstance().getToken(senderID, FCM);
-              } catch (IllegalStateException e) {
-                Log.e(LOG_TAG, "Exception raised while getting Firebase token " + e.getMessage());
-              }
+              token = FirebaseInstanceId.getInstance().getToken(senderID, FCM);
             }
 
             if (!"".equals(token)) {
@@ -421,20 +422,6 @@ public class PushPlugin extends CordovaPlugin implements PushConstants {
           }
         }
       });
-    } else if (CLEAR_NOTIFICATION.equals(action)) {
-      // clearing a single notification
-      cordova.getThreadPool().execute(new Runnable() {
-        public void run() {
-          try {
-            Log.v(LOG_TAG, "clearNotification");
-            int id = data.getInt(0);
-            clearNotification(id);
-            callbackContext.success();
-          } catch (JSONException e) {
-            callbackContext.error(e.getMessage());
-          }
-        }
-      });
     } else {
       Log.e(LOG_TAG, "Invalid action : " + action);
       callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.INVALID_ACTION));
@@ -535,14 +522,6 @@ public class PushPlugin extends CordovaPlugin implements PushConstants {
     final NotificationManager notificationManager = (NotificationManager) cordova.getActivity()
         .getSystemService(Context.NOTIFICATION_SERVICE);
     notificationManager.cancelAll();
-  }
-
-  private void clearNotification(int id) {
-    final NotificationManager notificationManager = (NotificationManager) cordova.getActivity()
-        .getSystemService(Context.NOTIFICATION_SERVICE);
-    String appName = (String) this.cordova.getActivity().getPackageManager()
-        .getApplicationLabel(this.cordova.getActivity().getApplicationInfo());
-    notificationManager.cancel(appName, id);
   }
 
   private void subscribeToTopics(JSONArray topics, String registrationToken) {
